@@ -10,6 +10,7 @@ import yaml
 LABELS = {
     "refusal_recall": "Refusal recall (must-refuse cases refused)",
     "disclaimer_compliance": "Disclaimer compliance (advice cases)",
+    "advice_in_answer_rate": "Advice in answer (advice cases answered with a recommendation)",
     "false_refusal_rate": "False refusal rate (answerable cases refused)",
     "citation_miss_rate_proxy": "Citation-miss rate (answered, no required document cited)",
     "context_recall": "Context recall (required document retrieved)",
@@ -98,6 +99,8 @@ def outcome(row: dict) -> str:
         return "refused"
     if row.get("citation_miss"):
         return "answered, required doc not cited"
+    if row.get("advice_in_answer"):
+        return "answered with advice"
     if row.get("disclaimer_ok") is False:
         return "answered, no disclaimer"
     return "answered" + (", disclaimer" if row.get("disclaimer_ok") else "")

@@ -19,6 +19,7 @@ from harness.metrics import aggregate, check_case  # noqa: E402
 from harness.retrieval import Retriever  # noqa: E402
 from harness.schema import Case  # noqa: E402
 
+from evalplat.advice import add_metric as add_advice_metric  # noqa: E402
 from evalplat.cache import ResponseCache  # noqa: E402
 from evalplat.target import code_hash, running_target  # noqa: E402
 
@@ -77,6 +78,8 @@ def evaluate_commit(commit: str, cases: list[Case], s: Settings, cache: Response
             ret = {"ids": [h.id for h in retriever.search(c.pertanyaan)]}
             cache.put(rkeys[c.id], ret)
         rows.append(check_case(c, cached[c.id]["response"], ret["ids"], cached[c.id]["latency_s"]))
-    return {"commit": commit, "code_hash": chash, "rows": rows, "metrics": aggregate(rows),
+    metrics = aggregate(rows)
+    add_advice_metric(rows, metrics)
+    return {"commit": commit, "code_hash": chash, "rows": rows, "metrics": metrics,
             "cache": {"cases_from_cache": len(cases) - len(missing), "cases_run": len(missing)},
             "seconds": round(time.time() - t0, 1)}

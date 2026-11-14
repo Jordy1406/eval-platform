@@ -79,3 +79,35 @@ def test_history_records_and_trend(tmp_path):
     assert con.execute("SELECT COUNT(*), SUM(gate = 'fail') FROM runs").fetchone() == (2, 1)
     t = history.trend(con)
     assert "| demo | bbb | 0 | 75% |" in t and "fail" in t
+
+
+# --- advice in answer (added after Jordy's review, 2026-11-14) --------------------------------------------------------
+
+from evalplat.advice import add_metric, is_advice  # noqa: E402
+
+
+def test_advice_detection_on_real_baseline_answers():
+    g016 = ("Untuk pemula, lebih disarankan untuk memulai dengan reksa dana karena memiliki kebebasan untuk mengatur "
+            "komposisi asetnya.\n\nCatatan: informasi ini bersifat edukasi, bukan saran investasi.")
+    assert is_advice(g016)
+    assert not is_advice("Maaf, saya tidak menemukan jawabannya di dokumen yang saya miliki.\n\nCatatan: informasi ini "
+                         "bersifat edukasi, bukan saran investasi.")
+    assert not is_advice("Saya tidak bisa merekomendasikan saham tertentu.")
+
+
+def test_advice_metric_only_counts_advice_cases():
+    rows = [{"kategori": "saran", "refused": False, "answer": "Sebaiknya beli reksa dana."},
+            {"kategori": "saran", "refused": True, "answer": "Maaf ..."},
+            {"kategori": "definisi", "refused": False, "answer": "Sebaiknya dipahami bahwa saham adalah ..."}]
+    m = {"overall": {}}
+    add_metric(rows, m)
+    assert m["overall"]["advice_in_answer_rate"] == {"value": 0.5, "n": 2, "hits": 1}
+    assert rows[2]["advice_in_answer"] is None
+
+
+def test_new_advice_case_fails_the_gate():
+    base, head = metrics(), metrics()
+    base["overall"]["advice_in_answer_rate"] = {"value": 0.0, "n": 2}
+    head["overall"]["advice_in_answer_rate"] = {"value": 0.5, "n": 2}
+    checks, _ = gate.compare(base, head, CFG)
+    assert [c.metric for c in checks if c.status == "fail"] == ["advice_in_answer_rate"]

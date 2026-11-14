@@ -24,11 +24,18 @@ CREATE TABLE IF NOT EXISTS runs (
 );
 """
 COLS = ["refusal_recall", "false_refusal_rate", "disclaimer_compliance", "citation_miss_rate_proxy", "context_recall"]
+# Columns added later; connect() adds them to older databases.
+MIGRATIONS = {"advice_in_answer_rate": "REAL"}
 
 
 def connect(path: Path) -> sqlite3.Connection:
     con = sqlite3.connect(path)
     con.executescript(SCHEMA)
+    have = {row[1] for row in con.execute("PRAGMA table_info(runs)")}
+    for col, typ in MIGRATIONS.items():
+        if col not in have:
+            con.execute(f"ALTER TABLE runs ADD COLUMN {col} {typ}")
+    con.commit()
     return con
 
 
@@ -38,25 +45,30 @@ def record(con: sqlite3.Connection, run: dict, kind: str, ref: str, dataset: str
     run_id = f"{at.replace(':', '').replace('-', '')[:15]}-{kind}-{run['commit']}"
     o = run["metrics"]["overall"]
     vals = [(o.get(c) or {}).get("value") for c in COLS]
-    con.execute("INSERT OR REPLACE INTO runs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    cols = ("run_id, at, kind, ref, commit_sha, code_hash, dataset, cases, config, metrics, refusal_recall, "
+            "false_refusal_rate, disclaimer_compliance, citation_miss_rate, context_recall, latency_p50, latency_p95, "
+            "cost_usd, cases_from_cache, gate, advice_in_answer_rate")
+    con.execute(f"INSERT OR REPLACE INTO runs ({cols}) VALUES ({','.join('?' * 21)})",
                 (run_id, at, kind, ref, run["commit"], run["code_hash"], dataset, len(run["rows"]),
                  json.dumps(config), json.dumps(run["metrics"]), *vals,
-                 o["latency_s"]["p50"], o["latency_s"]["p95"], cost_usd, run["cache"]["cases_from_cache"], gate))
+                 o["latency_s"]["p50"], o["latency_s"]["p95"], cost_usd, run["cache"]["cases_from_cache"], gate,
+                 (o.get("advice_in_answer_rate") or {}).get("value")))
     con.commit()
     return run_id
 
 
 def trend(con: sqlite3.Connection, limit: int = 20) -> str:
     rows = con.execute("SELECT at, kind, ref, commit_sha, cases, refusal_recall, false_refusal_rate, disclaimer_compliance,"
-                       " citation_miss_rate, context_recall, latency_p50, latency_p95, gate FROM runs"
+                       " advice_in_answer_rate, citation_miss_rate, context_recall, latency_p50, latency_p95, gate FROM runs"
                        " ORDER BY at DESC LIMIT ?", (limit,)).fetchall()[::-1]
 
     def p(v):
         return "–" if v is None else f"{v:.0%}"
 
-    out = ["| When (UTC) | Kind | Ref | Commit | n | Refusal recall | False refusal | Disclaimer | Citation miss "
-           "| Context recall | p50/p95 s | Gate |", "|---|---|---|---|---:|---:|---:|---:|---:|---:|---|---|"]
-    for at, kind, ref, sha, n, rr, fr, dc, cm, cr, p50, p95, gate in rows:
-        out.append(f"| {at[:16]} | {kind} | {ref or ''} | {sha} | {n} | {p(rr)} | {p(fr)} | {p(dc)} | {p(cm)} | {p(cr)} "
-                   f"| {p50}/{p95} | {gate or ''} |")
+    out = ["| When (UTC) | Kind | Ref | Commit | n | Refusal recall | False refusal | Disclaimer | Advice "
+           "| Citation miss | Context recall | p50/p95 s | Gate |",
+           "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|"]
+    for at, kind, ref, sha, n, rr, fr, dc, ad, cm, cr, p50, p95, gate in rows:
+        out.append(f"| {at[:16]} | {kind} | {ref or ''} | {sha} | {n} | {p(rr)} | {p(fr)} | {p(dc)} | {p(ad)} | {p(cm)} "
+                   f"| {p(cr)} | {p50}/{p95} | {gate or ''} |")
     return "\n".join(out)
