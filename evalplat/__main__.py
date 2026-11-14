@@ -97,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
             lines = []
             new_runs = []
             for run in (base_run, head_run):
-                extra = resample(run["commit"], subset, s, args.confirm)
+                extra = resample(run["commit"], subset, s, args.confirm, cache)
                 replaced = {}
                 for c in subset:
                     row, share = majority(c, [run["responses"][c.id], *extra[c.id]], run["retrieved"][c.id])

@@ -112,6 +112,24 @@ The `git push` of that branch was **blocked** by the pre-push hook. A README-onl
 answers and was pushed ([docs/demo/pre-push_transcript.txt](docs/demo/pre-push_transcript.txt); both pushes went to a
 local bare repository, not to GitHub).
 
+### Dogfooding: the gate blocked a real push, wrongly (2026-11-14)
+
+Pushing finassist-app's security fixes (P4-04) to GitHub, the gate **failed**: citation-miss went from 33 % to 44 %,
+over the 10 pp threshold. Yet the commits changed only `/agent`, auth and docs: the `/chat` code (rag, retrieval, llm,
+ingest) was identical. Two cases had flipped between runs (G009 refused → answered, G018 answered → refused). This was
+model noise on a single sample, and with only 9 answered cases, one flip is 11 pp. The gate had three faults:
+
+1. **The cache key hashed the whole `docs/` tree**, so editing `docs/KNOWN_RISKS.md`, which is not in the corpus, forced
+   a full re-run. Fix: hash only corpus files (`docs/*.md` with `source:` front matter, the app's own ingest rule).
+2. **One sample per case.** Fix: when the gate fails, the changed cases are re-sampled on both commits and the
+   **majority of 3** decides. The PR comment lists every majority.
+3. **The git SSH connection timed out** during a 10-minute hook. Fix: confirmation samples are cached too, so a
+   repeated check is instant and reaches the same decision.
+
+Result: the same push was re-checked twice with fresh samples, PASSED both times (G009 and G018 ended with the same
+outcome on both commits, 2/3 and 3/3), and went through the hook in 13 s. Thresholds were not changed; they are the
+owner's decision.
+
 ## 5. Design decisions and trade-offs
 
 - **Local hook instead of hosted CI, for now.** The account lock blocks GitHub Actions. A pre-push hook gives the same

@@ -88,18 +88,29 @@ def evaluate_commit(commit: str, cases: list[Case], s: Settings, cache: Response
 
 # --- confirmation on failure (added 2026-11-14 after a false-positive block) ---------------------------------------
 
-def resample(commit: str, cases: list[Case], s: Settings, n: int, log=print) -> dict[str, list[dict]]:
-    """n fresh answers per case from the target at `commit`, bypassing the cache."""
-    out = {c.id: [] for c in cases}
-    with running_target(s.target_repo, commit, s.index, env_extra={"OLLAMA_MODEL": s.model, "TOP_K": str(s.top_k)}) as url, \
-            httpx.Client(base_url=url, timeout=s.timeout) as http:
-        for c in cases:
-            for _ in range(n):
+def resample(commit: str, cases: list[Case], s: Settings, n: int, cache: ResponseCache | None = None,
+             log=print) -> dict[str, list[dict]]:
+    """n extra answers per case from the target at `commit`. Extra samples are cached under their own keys
+    (sample 1..n), so a repeated check reaches the same decision in seconds instead of re-sampling (a 10-minute
+    pre-push hook made git's SSH connection time out on 2026-11-14)."""
+    chash = code_hash(s.target_repo, commit)
+    key = lambda c, i: cache.key(f"{chash}#sample{i}", s.model, s.top_k, c.pertanyaan) if cache else None  # noqa: E731
+    out = {c.id: [cache.get(key(c, i)) if cache else None for i in range(1, n + 1)] for c in cases}
+    todo = [(c, i) for c in cases for i in range(1, n + 1) if out[c.id][i - 1] is None]
+    if todo:
+        with running_target(s.target_repo, commit, s.index, env_extra={"OLLAMA_MODEL": s.model, "TOP_K": str(s.top_k)}) as url, \
+                httpx.Client(base_url=url, timeout=s.timeout) as http:
+            for c, i in todo:
                 start = time.time()
                 r = http.post("/chat", json={"message": c.pertanyaan})
                 r.raise_for_status()
-                out[c.id].append({"response": r.json(), "latency_s": round(time.time() - start, 2)})
-            log(f"    {commit} {c.id}: +{n} samples")
+                v = {"response": r.json(), "latency_s": round(time.time() - start, 2)}
+                out[c.id][i - 1] = v
+                if cache:
+                    cache.put(key(c, i), v)
+                log(f"    {commit} {c.id}: sample {i + 1}")
+    else:
+        log(f"    {commit}: confirmation samples served from cache")
     return out
 
 
