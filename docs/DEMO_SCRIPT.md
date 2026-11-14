@@ -14,6 +14,7 @@ segment.
 - [ ] Terminal: dark theme, font size ≥ 18, window about 120 × 32. Close other apps and notifications.
 - [ ] Editor (VS Code) with `finassist-app/app/rag.py` and `eval-platform/gate.yaml` open in tabs.
 - [ ] Browser or Markdown preview with `eval-platform/docs/demo/gate_fail_helpful_prompt.md` rendered.
+- [ ] Dashboard running in a browser tab: `streamlit run dashboard/app.py` → http://localhost:8501.
 - [ ] `git -C ../finassist-app remote -v` shows `demo-remote` (a local bare repository). **Never push the demo
       branches to GitHub.**
 
@@ -28,7 +29,7 @@ segment.
 | **1:20–1:40** Why it failed | Rendered `docs/demo/gate_fail_helpful_prompt.md`: zoom on *False refusal rate 36 % → 64 %, +29 pp, allowed 10 pp ❌*. | "False refusals went from thirty-six to sixty-four percent. The 'helpful' prompt made the assistant refuse more good questions, not fewer. The model answered from its own knowledge without sources, and the code replaces any uncited answer with a refusal. Nobody would predict that from the prompt text." |
 | **1:40–2:00** Which cases changed | Same file: expand *Cases whose outcome changed* (G002, G005, G010, G016, G018 now refused). | "The report lists every case whose outcome changed, so a reviewer sees exactly what broke. 'What is a mutual fund?' and 'What is an ETF?' were answered before; now they are refused. That is the evidence a PR reviewer needs, not a vibe check." |
 | **2:00–2:20** A safe change passes | Terminal: `git push demo-remote demo/readme-only` → `all 20 cases served from cache` → `PASSED` → `[new branch]`. | "A change that doesn't touch the app or the documents, like this README edit, reuses main's answers exactly. It passes in about a second and is pushed. The gate only costs time when quality can actually change." |
-| **2:20–2:40** History | Terminal: `python -m evalplat trend`. Highlight the `fail` row for `demo/helpful-prompt` and the `pass` rows. | "Every evaluated commit is stored in SQLite: metrics, latency, cost and the gate decision. This is the trend over today's runs, and the same data can feed a dashboard. The baseline itself shows where to improve next: thirty-six percent false refusals." |
+| **2:20–2:40** Dashboard | Browser: the Streamlit dashboard. Top tiles (*1 commit blocked*, cost $0.00, baseline metrics), the bar chart comparing `main` and `demo/helpful-prompt`, then expand *Regressions blocked by the gate*. | "Every evaluated commit is stored in SQLite, and this dashboard reads it: baseline metrics, every commit side by side, latency, cost, and each regression the gate blocked, with its report. The baseline itself shows what to fix next: thirty-six percent false refusals." |
 | **2:40–3:00** Close | README of eval-platform (result box); end card: *eval-platform · llm-eval-harness · ai-redteam · github.com/Jordy1406*. | "The same command is wired into a GitHub Actions workflow for pull requests, plus a weekly full run. Quality regressions are blocked before merge, with evidence, and a reviewer can see why. I'm Jordy, and I test AI systems the way they actually fail." |
 
 ## Commands used on camera
@@ -39,7 +40,7 @@ git diff main demo/helpful-prompt -- app/rag.py
 git push demo-remote demo/helpful-prompt        # blocked by the pre-push hook (gate FAILED)
 git push demo-remote demo/readme-only           # allowed (gate PASSED from cache)
 cd ..\eval-platform
-python -m evalplat trend
+streamlit run dashboard/app.py                  # dashboard at http://localhost:8501
 ```
 
 `demo/readme-only` was already pushed on 2026-11-14. Before recording, delete it from the demo remote so the push is

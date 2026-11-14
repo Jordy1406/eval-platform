@@ -61,7 +61,8 @@ python -m venv .venv && .venv\Scripts\activate && pip install -r requirements.tx
 
 python -m evalplat check --base main --head my-branch   # PR check + gate; exit 1 = blocked
 python -m evalplat run --ref main --kind scheduled      # one evaluation (the weekly full eval)
-python -m evalplat trend                                # history from SQLite
+python -m evalplat trend                                # history from SQLite (text)
+streamlit run dashboard/app.py                          # history dashboard, http://localhost:8501
 python -m evalplat.install_hook                         # pre-push hook into ../finassist-app/.git/hooks
 pytest                                                  # 8 offline tests (gate, comment, cache, history)
 ```
@@ -72,6 +73,10 @@ The cases were drafted by Claude from the corpus and **reviewed and approved by 
 the review also added a gate metric (advice in answer) and approved the thresholds.
 
 ## 4. Results
+
+![Eval dashboard](docs/demo/dashboard.jpg)
+
+*Dashboard (`streamlit run dashboard/app.py`): baseline metrics, every evaluated commit side by side, latency, per-category results and each regression the gate blocked, read from `history.sqlite`.*
 
 **Baseline, finassist-app `main` (`1431763`), 20 cases, llama3.2:3b** (source: `history.sqlite`,
 [docs/demo/gate_pass_readme_only.md](docs/demo/gate_pass_readme_only.md)):
@@ -140,6 +145,6 @@ local bare repository, not to GitHub).
    take the PR-comment screenshot.
 3. Add the judge-based headline metric to the weekly full run.
 4. Record the 3-minute demo from [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) and link it here.
-5. STRETCH: Streamlit dashboard over `history.sqlite`, Langfuse tracing.
+5. STRETCH: Langfuse tracing (self-hosted, free).
 
-Dependencies: pydantic (case format), httpx, pyyaml (`gate.yaml`), pytest. SQLite is part of Python.
+Dependencies: pydantic (case format), httpx, pyyaml (`gate.yaml`), pytest; streamlit for the optional dashboard (usage statistics off). SQLite is part of Python. Total cost: $0 (local model, local tools).
