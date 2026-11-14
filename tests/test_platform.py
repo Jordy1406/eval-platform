@@ -111,3 +111,43 @@ def test_new_advice_case_fails_the_gate():
     head["overall"]["advice_in_answer_rate"] = {"value": 0.5, "n": 2}
     checks, _ = gate.compare(base, head, CFG)
     assert [c.metric for c in checks if c.status == "fail"] == ["advice_in_answer_rate"]
+
+
+# --- confirmation on failure + corpus-only cache key (added 2026-11-14 after a false-positive block) ----------------
+
+from evalplat.evaluate import load_cases, majority, outcome_key, rebuild  # noqa: E402
+from evalplat.target import code_hash  # noqa: E402
+
+ROOT = Path(__file__).resolve().parents[1]
+CASES = {c.id: c for c in load_cases(ROOT / "data" / "ci_subset.jsonl")}
+
+
+def resp(refused, src="wiki_indeks_harga_saham_gabungan#0"):
+    body = {"answer": "Maaf ..." if refused else "Indeks adalah ...", "refused": refused,
+            "sources": [] if refused else [{"id": src}]}
+    return {"response": body, "latency_s": 1.0}
+
+
+def test_majority_picks_the_most_frequent_outcome_and_keeps_first_on_tie():
+    case, ret = CASES["G018"], ["wiki_indeks_harga_saham_gabungan#0"]
+    row, share = majority(case, [resp(True), resp(False), resp(False)], ret)
+    assert row["refused"] is False and share == "2/3"
+    row, share = majority(case, [resp(True), resp(False)], ret)
+    assert row["refused"] is True and share == "1/2"
+
+
+def test_rebuild_recomputes_metrics_with_replaced_rows():
+    case, ret = CASES["G018"], ["wiki_indeks_harga_saham_gabungan#0"]
+    from harness.metrics import aggregate, check_case
+    rows = [check_case(case, resp(True)["response"], ret, 1.0)]
+    run = {"rows": rows, "metrics": aggregate(rows)}
+    assert run["metrics"]["overall"]["false_refusal_rate"]["value"] == 1.0
+    fixed = rebuild(run, [case], {"G018": check_case(case, resp(False)["response"], ret, 1.0)})
+    assert fixed["metrics"]["overall"]["false_refusal_rate"]["value"] == 0.0
+
+
+def test_project_notes_in_docs_do_not_change_the_cache_key():
+    repo = ROOT.parent / "finassist-app"
+    # c02bc82 only edited README.md and docs/KNOWN_RISKS.md (not part of the corpus) on top of 1431763
+    assert code_hash(repo, "1431763") == code_hash(repo, "c02bc82")
+    assert code_hash(repo, "595dbc6") != code_hash(repo, "1431763")       # app/ changed

@@ -81,5 +81,47 @@ def evaluate_commit(commit: str, cases: list[Case], s: Settings, cache: Response
     metrics = aggregate(rows)
     add_advice_metric(rows, metrics)
     return {"commit": commit, "code_hash": chash, "rows": rows, "metrics": metrics,
+            "responses": cached, "retrieved": {c.id: cache.get(rkeys[c.id])["ids"] for c in cases},
             "cache": {"cases_from_cache": len(cases) - len(missing), "cases_run": len(missing)},
             "seconds": round(time.time() - t0, 1)}
+
+
+# --- confirmation on failure (added 2026-11-14 after a false-positive block) ---------------------------------------
+
+def resample(commit: str, cases: list[Case], s: Settings, n: int, log=print) -> dict[str, list[dict]]:
+    """n fresh answers per case from the target at `commit`, bypassing the cache."""
+    out = {c.id: [] for c in cases}
+    with running_target(s.target_repo, commit, s.index, env_extra={"OLLAMA_MODEL": s.model, "TOP_K": str(s.top_k)}) as url, \
+            httpx.Client(base_url=url, timeout=s.timeout) as http:
+        for c in cases:
+            for _ in range(n):
+                start = time.time()
+                r = http.post("/chat", json={"message": c.pertanyaan})
+                r.raise_for_status()
+                out[c.id].append({"response": r.json(), "latency_s": round(time.time() - start, 2)})
+            log(f"    {commit} {c.id}: +{n} samples")
+    return out
+
+
+def outcome_key(row: dict) -> tuple:
+    """What the gate metrics see in one answer."""
+    return (row["refused"], row.get("citation_miss"), row.get("disclaimer_ok"), row.get("false_refusal"),
+            row.get("context_recall"))
+
+
+def majority(case: Case, samples: list[dict], retrieved: list[str]) -> tuple[dict, str]:
+    """Row for the most frequent outcome among the samples (ties keep the first sample, the cached one)."""
+    rows = [check_case(case, v["response"], retrieved, v["latency_s"]) for v in samples]
+    keys = [outcome_key(r) for r in rows]
+    best = max(keys, key=lambda k: (keys.count(k), -keys.index(k)))
+    return rows[keys.index(best)], f"{keys.count(best)}/{len(keys)}"
+
+
+def rebuild(run: dict, cases: list[Case], replaced: dict[str, dict]) -> dict:
+    """Same run with some case rows replaced, metrics recomputed."""
+    rows = [replaced.get(r["id"], r) for r in run["rows"]]
+    for r in rows:
+        r.pop("advice_in_answer", None)
+    metrics = aggregate(rows)
+    add_advice_metric(rows, metrics)
+    return {**run, "rows": rows, "metrics": metrics}

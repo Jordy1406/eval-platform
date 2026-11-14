@@ -91,6 +91,8 @@ def comment(base_run: dict, head_run: dict, checks: list[Check], warnings: list[
         lines += ["", "</details>"]
     lines += ["", f"Cache: baseline {base_run['cache']['cases_from_cache']}/{meta['cases']}, "
                   f"this change {head_run['cache']['cases_from_cache']}/{meta['cases']} cases reused."]
+    if meta.get("confirmation"):
+        lines += ["", "**Confirmation run:** " + meta["confirmation"]]
     return "\n".join(lines) + "\n"
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import socket
 import subprocess
@@ -14,16 +15,33 @@ import httpx
 
 
 def git(repo: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True).stdout.strip()
+    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", check=True).stdout.strip()
 
 
 def resolve(repo: Path, ref: str) -> str:
     return git(repo, "rev-parse", "--short=12", f"{ref}^{{commit}}")
 
 
+def corpus_hash(repo: Path, commit: str) -> str:
+    """Hash of the corpus files only: docs/*.md with a `source:` line in the front matter, the same rule the app's
+    ingest uses. Project notes in docs/ (KNOWN_RISKS.md, SOURCES.md) do not reach the index, so editing them must not
+    invalidate cached answers (it did on 2026-11-14 and let sampling noise fail the gate)."""
+    blobs = []
+    for line in git(repo, "ls-tree", commit, "docs/").splitlines():
+        meta, path = line.split("\t", 1)
+        mode, kind, sha = meta.split()
+        if kind != "blob" or not path.endswith(".md"):
+            continue
+        head = git(repo, "cat-file", "-p", sha)[:2000]
+        if head.startswith("---") and "\nsource:" in head.split("\n---", 2)[0] + "\n":
+            blobs.append(f"{path}:{sha}")
+    return hashlib.sha256("\n".join(sorted(blobs)).encode()).hexdigest()[:12]
+
+
 def code_hash(repo: Path, commit: str) -> str:
-    """Identity of what the eval depends on: the app code and the corpus at that commit (git tree hashes)."""
-    return git(repo, "rev-parse", f"{commit}:app")[:12] + "-" + git(repo, "rev-parse", f"{commit}:docs")[:12]
+    """Identity of what the eval depends on: the app code tree and the corpus files at that commit."""
+    return git(repo, "rev-parse", f"{commit}:app")[:12] + "-" + corpus_hash(repo, commit)
 
 
 def free_port() -> int:

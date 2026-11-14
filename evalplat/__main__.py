@@ -17,7 +17,7 @@ from pathlib import Path
 
 from evalplat import gate, history
 from evalplat.cache import ResponseCache
-from evalplat.evaluate import Settings, evaluate_commit, load_cases
+from evalplat.evaluate import Settings, evaluate_commit, load_cases, majority, rebuild, resample
 from evalplat.target import resolve
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,6 +46,8 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--base", default="main")
     c.add_argument("--head", default="HEAD")
     c.add_argument("--gate", type=Path, default=ROOT / "gate.yaml")
+    c.add_argument("--confirm", type=int, default=2,
+                   help="extra samples per changed case when the gate fails (majority of 1+N); 0 = no confirmation")
     r = sub.add_parser("run", help="evaluate one ref")
     common(r)
     r.add_argument("--ref", default="main")
@@ -84,6 +86,30 @@ def main(argv: list[str] | None = None) -> int:
     checks, warnings = gate.compare(base_run["metrics"], head_run["metrics"], cfg)
     ok = gate.passed(checks)
     meta = {"base_ref": args.base, "head_ref": args.head, "cases": len(cases), "model": s.model}
+    if not ok and head != base and args.confirm > 0:
+        # A single sample per case can flip on model noise (2026-11-14: identical /chat code failed the gate).
+        # Re-sample only the cases whose outcome changed, on both commits, and judge by majority.
+        changed_ids = [cid for cid, *_ in gate.changed_cases(base_run["rows"], head_run["rows"])]
+        if changed_ids:
+            subset = [c for c in cases if c.id in changed_ids]
+            print(f"Gate failed on first sample; confirming {len(subset)} changed case(s) with {args.confirm} more "
+                  f"sample(s) on each commit ...")
+            lines = []
+            new_runs = []
+            for run in (base_run, head_run):
+                extra = resample(run["commit"], subset, s, args.confirm)
+                replaced = {}
+                for c in subset:
+                    row, share = majority(c, [run["responses"][c.id], *extra[c.id]], run["retrieved"][c.id])
+                    replaced[c.id] = row
+                    lines.append(f"{run['commit']} {c.id}: majority outcome {gate.outcome(row)} ({share})")
+                new_runs.append(rebuild(run, cases, replaced))
+            base_run, head_run = new_runs
+            checks, warnings = gate.compare(base_run["metrics"], head_run["metrics"], cfg)
+            ok = gate.passed(checks)
+            meta["confirmation"] = (f"First sample failed the gate; {len(subset)} changed case(s) re-sampled "
+                                    f"{args.confirm + 1}× on both commits, majority used. Final: "
+                                    f"{'PASSED' if ok else 'FAILED'}.\n\n" + "\n".join(f"- {l}" for l in lines))
     text = gate.comment(base_run, head_run, checks, warnings, meta)
     history.record(con, base_run, "check-base", args.base, args.dataset.name, config)
     rid = history.record(con, head_run, "check-head", args.head, args.dataset.name, config, gate="pass" if ok else "fail")
