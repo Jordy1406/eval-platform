@@ -139,6 +139,7 @@ local bare repository, not to GitHub).
 2. Unlock GitHub Actions, publish this repository and llm-eval-harness, and copy the workflow into finassist-app; then
    take the PR-comment screenshot.
 3. Add the judge-based headline metric to the weekly full run.
-4. STRETCH: Streamlit dashboard over `history.sqlite`, Langfuse tracing, 3-minute demo video.
+4. Record the 3-minute demo from [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) and link it here.
+5. STRETCH: Streamlit dashboard over `history.sqlite`, Langfuse tracing.
 
 Dependencies: pydantic (case format), httpx, pyyaml (`gate.yaml`), pytest. SQLite is part of Python.

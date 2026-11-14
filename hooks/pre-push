@@ -11,8 +11,11 @@ while read local_ref local_sha remote_ref remote_sha; do
     refs/heads/main) base="$remote_sha"; [ "$base" = "$ZERO" ] && continue ;;
     *) base="main" ;;
   esac
-  echo "[eval gate] $remote_ref: $local_sha vs $base"
-  ( cd "$EVALPLAT_DIR" && .venv/Scripts/python -m evalplat check --base "$base" --head "$local_sha" ) || status=1
+  # Name the head by its branch when the pushed commit is a branch tip (readable history), else by the commit.
+  head="$local_sha"
+  case "$local_ref" in refs/heads/*) [ "$(git rev-parse "$local_ref")" = "$local_sha" ] && head="${local_ref#refs/heads/}" ;; esac
+  echo "[eval gate] $remote_ref: $head vs $base"
+  ( cd "$EVALPLAT_DIR" && .venv/Scripts/python -m evalplat check --base "$base" --head "$head" ) || status=1
 done
 if [ $status -ne 0 ]; then
   echo "[eval gate] Push BLOCKED: quality regressed beyond gate.yaml. Report: $EVALPLAT_DIR/runs/latest_comment.md"
