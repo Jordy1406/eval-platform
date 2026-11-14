@@ -1,0 +1,69 @@
+# GitHub Actions version of the local gate (P5-01/02). Copy to finassist-app/.github/workflows/eval-gate.yml.
+# STATUS: written, NOT yet run on GitHub. The Jordy1406 account is billing-locked (checked 2026-11-14), so the same
+# commands run locally through `python -m evalplat check` and the pre-push hook. Needs eval-platform and
+# llm-eval-harness to be published (they are local repositories today).
+name: eval-gate
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 1 * * 1"        # full eval every Monday 08:00 WIB
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write          # post the score comment
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with: {path: finassist-app, fetch-depth: 0}
+      - uses: actions/checkout@v4
+        with: {repository: Jordy1406/eval-platform, path: eval-platform}
+      - uses: actions/checkout@v4
+        with: {repository: Jordy1406/llm-eval-harness, path: llm-eval-harness}
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+
+      - name: Install Ollama and models (CPU)
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama pull llama3.2:3b
+          ollama pull nomic-embed-text
+
+      - name: Install Python dependencies
+        run: |
+          python -m venv finassist-app/.venv && finassist-app/.venv/bin/pip install -r finassist-app/requirements.txt
+          python -m venv eval-platform/.venv && eval-platform/.venv/bin/pip install -r eval-platform/requirements.txt
+
+      - name: Restore response cache and index
+        uses: actions/cache@v4
+        with:
+          path: |
+            eval-platform/cache
+            finassist-app/data/index.json
+          key: evalplat-${{ hashFiles('finassist-app/app/**', 'finassist-app/docs/**') }}
+          restore-keys: evalplat-
+
+      - name: Build the index if missing
+        working-directory: finassist-app
+        run: test -f data/index.json || .venv/bin/python -m app.ingest
+
+      - name: Quality gate (PR) or full eval (schedule)
+        working-directory: eval-platform
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            .venv/bin/python -m evalplat check --base origin/main --head HEAD
+          else
+            .venv/bin/python -m evalplat run --ref HEAD --kind scheduled
+          fi
+
+      - name: Post the score as a PR comment
+        if: always() && github.event_name == 'pull_request'
+        working-directory: eval-platform
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file runs/latest_comment.md

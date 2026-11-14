@@ -1,0 +1,16 @@
+# git push from finassist-app with the eval-platform pre-push hook installed (2026-11-14, local demo remote)
+
+$ git push demo-remote demo/helpful-prompt          # /chat prompt made "more helpful"
+[eval gate] refs/heads/demo/helpful-prompt: 6827edd0d23901882ce86b3bfc8b9148eb00d667 vs main
+Quality gate: 6827edd0d23901882ce86b3bfc8b9148eb00d667 (6827edd0d239) vs main (1431763b598a), 20 cases
+## ❌ Eval quality gate: FAILED
+[eval gate] Push BLOCKED: quality regressed beyond gate.yaml. Report: D:/ai-quality/eval-platform/runs/latest_comment.md
+error: failed to push some refs to 'D:/ai-quality/.demo-remote/finassist-app.git'
+
+$ git push demo-remote demo/readme-only             # README-only change
+[eval gate] refs/heads/demo/readme-only: 4798b591514ee4abd54da001997e0b91d0de7cd3 vs main
+Quality gate: 4798b591514ee4abd54da001997e0b91d0de7cd3 (4798b591514e) vs main (1431763b598a), 20 cases
+  1431763b598a: all 20 cases served from cache
+  4798b591514e: all 20 cases served from cache
+## ✅ Eval quality gate: PASSED
+ * [new branch]      demo/readme-only -> demo/readme-only
